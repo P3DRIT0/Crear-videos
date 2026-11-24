@@ -1,5 +1,125 @@
 # Estado del proyecto · 24 de noviembre de 2026
 
+## Auditoría y mejoras · estado más reciente
+
+La [auditoría](AUDIT-2026-11-24.md) y el [ADR 009](adr/009-auditoria-local.md)
+documentan el endurecimiento posterior a la integración HOME. Se corrigieron
+persistencia ante fallos, cleanup/VRAM, rutas/licencias, pérdida de historial,
+egreso, estado del lanzador y cargas/SSE del panel. **33 pruebas aprobadas en
+38,40 s**, Ruff F, compilación/sintaxis y diff correctos. Navegadores WORK y HOME
+aprobados. Ambos entornos pasan comprobación de compatibilidad de dependencias.
+
+Qwen, SDXL y Wan completaron smoke real con los controles de aplicación activos;
+petición de descarga denegada sin cambiar modelos. Recuperación sobre copia
+restaurada: checkpoint reconstruido y clip auténtico con el mismo SHA-256,
+historial perdido, cero nuevos envíos. Backup/restauración de 21 blobs verificados.
+Cuatro servicios locales: proxy de denegación, Ollama, ComfyUI y Studio.
+Producción bloquea el modo explícito de instalación `--allow-downloads`.
+
+Siguen pendientes la revisión visual humana del piloto, desconexión física,
+corte completo del PC, Exyo real y migración al stack objetivo. No se repitió un
+reel de cinco planos en esta auditoría ni se hizo auditoría completa de CVEs.
+Sin nuevos pesos, drivers, cuentas, publicación, commits ni push. Los apartados
+siguientes conservan la evidencia histórica de las fases anteriores; sus
+limitaciones quedan ampliadas por el informe actual.
+
+## Integración HOME · dashboard y worker recuperable
+
+**La generación real ya funciona desde el dashboard.** En Nueva producción se
+elige HOME para Ollama → referencia SDXL → cinco clips Wan → montaje/QC. MOCK
+continúa disponible y WORK bloquea inferencia. El [ADR 008](adr/008-home-dashboard.md)
+explica checkpoints, límites y semántica de recuperación; [HOME](HOME.md) describe
+la operación. Esta fase no migra a Next.js/FastAPI/Temporal ni activa publicación.
+
+| Aceptación de integración | Resultado observado |
+|---|---|
+| Creación desde navegador | Campaña y producción HOME creadas en Chromium; Renderizar reel inicia la cadena real. Producción `add9f514-9e1f-4a68-b5e4-c537bd124318`, marca Retrobay |
+| Guion y referencia | Ollama produjo JSON validado; SDXL generó la referencia real conservada para todos los clips. El guion preparatorio lleva etiqueta MOCK hasta sustituirse por Ollama |
+| Reinicio durante inferencia | Se detuvo y arrancó el estudio con el primer clip en ComfyUI. ID `ed0869d1-c5de-4f3d-9d23-e1d1584399ce` recuperado; un solo envío registrado y una sola salida MP4 con ese prefijo. Guion y referencia conservados |
+| Cancelación real | Se canceló el ID `790178d7-ae5a-46d4-89b8-0903f0365964` mediante `/api/jobs/{id}/cancel` del ComfyUI 0.46.0 inspeccionado. Se conservaron los candidatos ya guardados y la reanudación completó el montaje |
+| Regeneración selectiva real | Se regeneró el tercer plano. Cambió únicamente su candidato seleccionado; los otros cuatro hashes se conservaron. Hay dos candidatos del tercer plano y se mantiene el montaje anterior |
+| Montaje vigente | 15 s, H.264 1080 × 1920 a 24 fps, AAC, mov_text, portada, copy, timeline y manifest. Clips nativos 480 × 832; escalado/recorte en exportación. QC aprobado: cero intervalos negros, pico −19,7 dB |
+| Hash del vídeo | `b9da7f32b738b74edd1fd90cc278515c9bb4813262417dd60a1e4ac68703b906` |
+| Hash del manifest | `aed984798dd0a29185ac0bff9c384f522e21c5341fdbd01e48978c398459a44b`; contiene modelos, licencias, grafos, IDs, seeds, recursos observados y ejecuciones HOME |
+| Navegador HOME | `node scripts/home-browser-verify.mjs`: reproduce el MP4, descarga y verifica el hash del manifest, comprueba cinco licencias descargables, cero errores JS y cero peticiones externas de la página |
+| Regresión WORK en navegador | `node tests/dashboard.mjs`: CRUD, montaje MOCK, revisión de fixture, dry-run, móvil y cero solicitudes externas. El harness fija WORK sin HOME para no activar modelos |
+| Python | `estudio.cmd test`: **21 pruebas aprobadas en 43,47 s**. Las cinco nuevas usan proveedores loopback explícitamente SIMULADOS y datos temporales: recuperación, envío incierto sin duplicación, cancelación, regeneración, licencias/hashes, OOM visible, aislamiento WORK, backup y exportación Windows |
+| Transporte truncado | Se añadió comprobación de Content-Length y error HTTP incompleto; `pytest -q tests/test_providers.py`: dos pruebas aprobadas tras el ajuste |
+| Copia/restauración real | 21 blobs referenciados, incluidos candidatos, montajes y textos de licencia. Restauración con el mismo vídeo y cinco licencias verificadas por hash. No incluye pesos ni entornos |
+| Exportación | `E:\AI-Creative-Studio\exports\dashboard-retrobay-20261124`: reel-HOME, portada, cinco clips, referencia, subtítulos, copy, timeline, storyboard, manifest y licencias |
+| Checks | Compilación Python, sintaxis JS, Ruff sobre archivos nuevos y reglas F sobre todo el código; diff sin errores de espacio |
+
+[Abrir el montaje integrado](http://127.0.0.1:8765/studio?brand=720c761b-64d9-4d3c-9dd5-b1dc2e82edeb&production=add9f514-9e1f-4a68-b5e4-c537bd124318#edit).
+Las pruebas y snapshots están en `E:\AI-Creative-Studio\logs`, especialmente
+`home-before-restart.json`, `home-recovered.json`, `home-cancelled.json`,
+`home-recovery-final.json`, `home-browser-verified.json` y `home-backup-verified.json`.
+La copia está en `backups/dashboard-home-20261124` y la restauración en
+`backups/dashboard-home-restored-20261124`, relativas a esa raíz.
+
+Durante el desarrollo del harness real se corrigieron esperas de carga del
+selector y observación asíncrona del ID en la URL. Se conservaron campañas técnicas
+y un borrador preliminar; no se borraron datos. El piloto real identificado arriba
+sí completó el recorrido. La última versión del harness de creación no se repitió
+desde cero para generar otro piloto; la verificación final independiente y el
+recorrido WORK sí terminaron correctamente.
+
+Límites: la recuperación probada mantiene ComfyUI activo mientras reinicia el
+estudio. Si desaparece un ID de cola/historial, se muestra resultado incierto y
+se requiere reintento explícito; no se promete exactamente una ejecución tras
+cualquier fallo de ComfyUI o del PC. El guion puro puede repetirse tras interrupción,
+con límite de intentos. Recursos muestreados del dispositivo/sistema, no picos
+absolutos ni medidas exclusivas del modelo. No se han probado 720p, 14B, GPU con
+otros programas compitiendo ni desconexión física de red. Temporal, LangGraph,
+Next.js/FastAPI, PostgreSQL integral y Vitest siguen pendientes del stack objetivo.
+El piloto no tiene revisiones ni publicaciones: falta evaluación visual humana.
+
+## Instalación HOME · estado previo a la integración
+
+La instalación doméstica está preparada en `E:\AI-Creative-Studio` con Python,
+FFmpeg/ffprobe, Ollama portable, ComfyUI y pesos verificados. RTX 4070 SUPER
+de 12282 MiB y RAM física de 15,9 GiB comprobadas. La [guía HOME](HOME.md)
+documenta versiones, licencias, arranque y límites. El [ADR 007](adr/007-home-windows.md)
+registra las decisiones. No se modificaron drivers, cuentas ni servicios del sistema.
+
+**En esta entrega previa, la inferencia real funcionaba mediante CLI independiente
+y el dashboard conservaba su render MOCK.** No se había completado la migración a Next.js/FastAPI/Temporal ni
+se ha conectado un worker GPU durable al dashboard. La publicación real sigue
+desactivada y ningún piloto ha recibido aprobación visual humana.
+
+| Comprobación HOME | Evidencia real |
+|---|---|
+| Arranque y reinicio completo | `estudio.cmd stop/start/status`: los tres servicios se detuvieron y volvieron a responder en 127.0.0.1:8765, :11434 y :8188. SQLite esquema 4, storage ok; Retrobay y Exyo persistentes |
+| Regresión Python | `estudio.cmd test`: 16 pruebas pytest, incluidos recuperación, cancelación, aislamiento, hash/licencia, montaje, calendario, backup/restore y validación del manifest Ollama 0.40. Última ejecución tras reinicio: 16 aprobadas en 9,13 s |
+| Navegador | Chrome 158.0.8127.37 con Playwright Core 1.65.1: CRUD, montaje, revisión de fixture, dry-run y móvil; cero peticiones externas del dashboard. Una ejecución simultánea al piloto GPU agotó el timeout; repetida con GPU libre, pasó en 9,4 s |
+| Checks | Compilación Python y sintaxis de ambos JS correctas; Ruff completo en archivos nuevos y reglas F en todo el código correctos; `git diff --check` correcto |
+| Ollama real | Qwen3 4B Q4_K_M, digest `359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7`. El primer guion se rechazó por longitud. Tras concretar las instrucciones: JSON validado en 4,110 s; máximo muestreado 4578 MiB VRAM y 12624 MiB RAM |
+| SDXL real | PNG 576 × 1024, 790306 bytes, SHA-256 `91fef3f0158e4e9002dddf98d9dfc5958e1b8c2b65ee21dc177ff12ca31b1954`. 13,406 s; máximos muestreados 8364 MiB VRAM y 12060 MiB RAM |
+| Wan real inicial | MP4 288 × 512, 73 frames a 24 fps, 3,041667 s, 311031 bytes. 41,500 s; máximos muestreados 11611 MiB VRAM y 13897 MiB RAM. Presenta artefactos visibles; no aprobado visualmente |
+| Primer piloto de cinco planos | `reels/retrobay-20261124-163729/reel.mp4`: cinco planos I2V de 3 s con referencia común; H.264 1080 × 1920 escalado desde 288 × 512, 24 fps, AAC y mov_text. QC técnico aprobado, 15,000 s, pico −19,7 dB, cero intervalos negros. SHA-256 `c3489f9894a4eeb3f269a9f636333fb64d01ab60e0c5acaa12b2d3d721ecde6d`. Calidad visual pendiente |
+| Prueba 480 × 832 | Carga FP8 del mismo peso FP16; clip I2V de 3,041667 s generado sin OOM. 85,328 s hasta el fallo de postproceso del comando manual por omitir PATH de ffprobe. El mismo archivo se validó con ffprobe después, sin regenerarlo ni alterar el informe fallido. `benchmarks/clip480-20261124-164321/validation.json`; muestras de 11607 MiB VRAM y 11815 MiB RAM |
+| **Piloto HOME vigente · 480 × 832** | `reels/retrobay-20261124-164623/reel.mp4`: cinco planos I2V reales, semillas y referencia común verificadas. Exportación escalada H.264 1080 × 1920, 24 fps, AAC y mov_text; 15,000 s, 9051787 bytes. QC técnico aprobado: cero intervalos negros, pico −19,7 dB. SHA-256 `4d25a880743232f94e8e6e959955898d509da68948203ce8678b216d7a78abf6`. Etapas de inferencia y probe: 432,814 s acumulados, excluyendo verificación previa de pesos y montaje. Máximos muestreados: 11422 MiB VRAM, 11030 MiB RAM. Revisión humana pendiente |
+| Backup real de configuración | Copia y restauración en `backups/home-setup-20261124` y `home-restore-20261124`: dos marcas recuperadas. Cero blobs en esta base nueva; los medios HOME CLI están fuera de SQLite y deben copiarse aparte |
+| Licencias e inventario | Cinco pesos con fuentes, versiones, tamaños, SHA-256 y licencias en `licenses/verified-assets.json`; código y paquetes en `installation.json`. Archivos pesados fuera del repositorio |
+| Traslado HOME | `scripts/package.py` actualizado para incluir catálogo JSON, lanzador CMD y ambos locks HOME. Paquete final de fuentes: `exports/creative-studio-home-final-20261124.zip`, 86 archivos con inventario SHA-256; excluye datos, pesos, entornos y credenciales |
+| Red observada | Servicios en loopback, Ollama sin nube, ComfyUI offline sin custom nodes, HF offline. Muestra de conexiones externas de esos procesos: ninguna. Sin prueba de desconexión física ni aislamiento de firewall |
+
+Las rutas de artefactos de la tabla son relativas a `E:\AI-Creative-Studio`.
+Los valores de recursos son máximos muestreados de todo el dispositivo/sistema
+cada segundo. No son benchmarks universales. El guion válido pertenece al segundo
+intento, con cargas previas; no se presenta como tiempo de arranque en frío.
+La configuración CLI se ajusta a 480 × 832 con carga FP8 después de la prueba.
+El piloto vigente se generó entero con el lanzador y completó sus cinco informes
+de benchmark, montaje, QC y portada. El primer piloto de 288 × 512 se conserva
+como diagnóstico y no es la entrega visual recomendada para revisar.
+
+No ejecutados en HOME: migraciones sobre PostgreSQL real (no hay Docker),
+Temporal, LangGraph, build Next.js, Vitest ni API FastAPI (no forman parte del
+ejecutable existente). Sin prueba física offline, evaluación humana de calidad,
+publicación real, voz neural o música generada por modelo. El histórico siguiente
+describe WORK y no sustituye estas limitaciones actuales.
+
+## Histórico WORK
+
 **La cadena WORK está operativa de campaña a reel MOCK y dry-run.** El dashboard y el worker usan CPU y SQLite. Las fichas y campañas de 01 se conservaron al migrar. El piloto Retrobay tiene un montaje descargable. Su revisión editorial queda en manos del usuario.
 
 ## Aceptación actual

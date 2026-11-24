@@ -2,8 +2,9 @@
 import hashlib
 import http.client
 import json
-from pathlib import Path
 import re
+import socket
+from threading import Event, Thread
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -17,8 +18,25 @@ class LocalAPI:
         self.port=port
         self.timeout=timeout
 
-    def request(self,path,body=None,binary=False,allow_empty=False):
+    def request(self,path,body=None,binary=False,allow_empty=False,cancelled=None):
+        if cancelled and cancelled():
+            raise RuntimeError("Cancelación local solicitada.")
         conn=http.client.HTTPConnection("127.0.0.1",self.port,timeout=self.timeout)
+        stop=Event()
+        monitor=None
+        if cancelled:
+            def watch():
+                while not stop.wait(0.25):
+                    if cancelled():
+                        try:
+                            if conn.sock:
+                                conn.sock.shutdown(socket.SHUT_RDWR)
+                        except OSError:
+                            pass
+                        conn.close()
+                        return
+            monitor=Thread(target=watch,daemon=True)
+            monitor.start()
         try:
             conn.request("POST" if body is not None else "GET",path,
                          body=json.dumps(body) if body is not None else None,
@@ -29,10 +47,18 @@ class LocalAPI:
             data=resp.read(16*1024*1024+1)
             if len(data)>16*1024*1024:
                 raise ValueError("El proveedor excedió el límite del resultado.")
+            expected=resp.getheader("Content-Length")
+            if expected is not None and int(expected)!=len(data):
+                raise RuntimeError("Respuesta incompleta del proveedor local.")
             if allow_empty and not data:
                 return None
             return data if binary else json.loads(data)
+        except http.client.HTTPException as exc:
+            raise RuntimeError("Respuesta incompleta del proveedor local: "+type(exc).__name__) from exc
         finally:
+            stop.set()
+            if monitor:
+                monitor.join(timeout=2)
             conn.close()
 
 
@@ -40,7 +66,7 @@ class Ollama(LocalAPI):
     def __init__(self, profile, port=11434):
         super().__init__(profile,port,timeout=90)
 
-    def script(self, model, digest, idea):
+    def script(self, model, digest, idea, cancelled=None):
         if not re.fullmatch(r"[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+",model) or "cloud" in model.lower():
             raise ValueError("Se requiere un tag local explícito.")
         if not re.fullmatch("[0-9a-f]{64}",digest):
@@ -48,9 +74,12 @@ class Ollama(LocalAPI):
         installed=self.request("/api/tags").get("models",[])
         if not any(m.get("name")==model and m.get("digest")==digest for m in installed):
             raise ValueError("El modelo y su digest deben estar instalados y verificados en HOME.")
-        result=self.request("/api/chat",{"model":model,"messages":[{"role":"user","content":idea[:1000]}],
+        result=self.request("/api/chat",{"model":model,"messages":[
+            {"role":"system","content":"Devuelve solo el JSON solicitado: version=1, hook, scenes y cta. Exactamente cinco escenas. Cada texto, incluidos hook y cta, debe tener como máximo 80 caracteres. Una frase corta por escena, sin diálogos. No añadas campos."},
+            {"role":"user","content":idea[:1000]}],
             "stream":False,"format":Script.model_json_schema(),"keep_alive":0,
-            "options":{"temperature":0,"num_predict":512}})
+            **({"think": False} if model.startswith("qwen3:") else {}),
+            "options":{"temperature":0,"num_ctx":2048,"num_predict":512}}, cancelled=cancelled)
         return Script.model_validate_json(result["message"]["content"])
 
 
@@ -58,7 +87,7 @@ class ComfyUI(LocalAPI):
     def __init__(self,profile,port=8188):
         super().__init__(profile,port)
 
-    def submit(self,workflow,checksum):
+    def submit(self,workflow,checksum,prompt_id=None):
         if hashlib.sha256(workflow).hexdigest()!=checksum:
             raise ValueError("El workflow ha cambiado desde su revisión.")
         graph=json.loads(workflow)
@@ -70,8 +99,14 @@ class ComfyUI(LocalAPI):
                  "ModelSamplingSD3","Wan22ImageToVideoLatent","CreateVideo","SaveVideo","LoadImage"}
         if any(node.get("class_type") not in allowed for node in graph.values()):
             raise ValueError("El grafo contiene nodos sin auditar.")
-        result=self.request("/prompt",{"prompt":graph})
-        return str(UUID(result["prompt_id"]))
+        body={"prompt":graph}
+        if prompt_id is not None:
+            body["prompt_id"]=str(UUID(prompt_id))
+        result=self.request("/prompt",body)
+        result_id=str(UUID(result["prompt_id"]))
+        if prompt_id is not None and result_id != prompt_id:
+            raise RuntimeError("ComfyUI no respetó el ID persistido; reconciliar antes de continuar.")
+        return result_id
 
     def status(self,job):
         job=str(UUID(job))
@@ -93,3 +128,11 @@ class ComfyUI(LocalAPI):
 
     def cancel_queued(self,job):
         return self.request("/queue",{"delete":[str(UUID(job))]},allow_empty=True)
+
+    def cancel(self,job):
+        job=str(UUID(job))
+        self.cancel_queued(job)
+        return self.request("/interrupt",{"prompt_id":job},allow_empty=True)
+
+    def cancel_atomic(self,job):
+        return self.request("/api/jobs/"+str(UUID(job))+"/cancel",{})

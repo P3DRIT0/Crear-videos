@@ -38,8 +38,11 @@ class Studio:
                 "schema_version": version, "storage": "ok"}
 
     def capabilities(self):
-        return {"profile": "work", "database": self.db.config.backend, "gpu_jobs": 0,
-                "remote_inference": False, "publishing": False, "executor": self.executor.name}
+        from packages.network_policy import installed
+        enabled = self.db.config.home_root is not None
+        return {"profile": "home16" if enabled else "work", "database": self.db.config.backend, "gpu_jobs": int(enabled),
+                "remote_inference": False, "publishing": False, "executor": self.executor.name,
+                "home_enabled": enabled,"offline_policy_installed":installed()}
 
     def brands(self):
         with self.db.transaction() as query:

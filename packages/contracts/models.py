@@ -80,12 +80,14 @@ class Health(Model):
 
 
 class Capabilities(Model):
-    profile: Literal["work"]
+    profile: Literal["work", "home16"]
     database: str
-    gpu_jobs: Literal[0]
+    gpu_jobs: Literal[0, 1]
     remote_inference: Literal[False]
     publishing: Literal[False]
     executor: Literal["manual-sync"]
+    home_enabled: bool = False
+    offline_policy_installed: bool = False
 
 
 class Error(Model):

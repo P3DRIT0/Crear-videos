@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "reviewed_by": "Codex: revisión de textos oficiales, 2026-11-24",
+  "assets": [
+    {
+      "id": "sdxl-base-1.0",
+      "license_sha256": "19b6998b569b53ac1fc2158a8a3202c8699a9a4605b47075715d9c96be7fb6d0",
+      "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_base_1.0.safetensors",
+      "version": "462165984030d82259a11f4367a4eed129e94a7b",
+      "path": "ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors",
+      "bytes": 6938078334,
+      "sha256": "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+      "license_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/LICENSE.md",
+      "license_id": "LicenseRef-CreativeML-Open-RAIL-PlusPlus-M",
+      "restrictions": "Uso comercial permitido sujeto al anexo A; conservar licencia y avisos al redistribuir. Restricciones contra usos ilegales, daño, discriminación, asesoramiento médico y decisiones adversas automatizadas. No otorga marcas ni derechos sobre terceros."
+    },
+    {
+      "id": "wan22-ti2v-5b",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/5df3a4a3ed0628002308022198249dbbbd045d09/split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+      "version": "5df3a4a3ed0628002308022198249dbbbd045d09",
+      "path": "ComfyUI/models/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+      "bytes": 9999658848,
+      "sha256": "456f901338bd9eadbded3828b819109a9b68e8a525ca5cf8d0049a69fcfeca1e",
+      "license_url": "https://raw.githubusercontent.com/Wan-Video/Wan2.2/1ea34ff48f87168174e12956e200b1d908b1c5ff/LICENSE.txt",
+      "license_id": "Apache-2.0",
+      "restrictions": "Conservar licencia, avisos y cambios al redistribuir. Sin concesión de marcas. Pesos reempaquetados por Comfy-Org, referenciados en el tutorial oficial."
+    },
+    {
+      "id": "wan22-umt5-fp8",
+      "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/5df3a4a3ed0628002308022198249dbbbd045d09/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "version": "5df3a4a3ed0628002308022198249dbbbd045d09",
+      "path": "ComfyUI/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "bytes": 6735906897,
+      "sha256": "c3355d30191f1f066b26d93fba017ae9809dce6c627dda5f6a66eaa651204f68",
+      "license_url": "https://raw.githubusercontent.com/google-research/t5x/main/LICENSE",
+      "license_id": "Apache-2.0",
+      "restrictions": "uMT5 de Google (google/umt5-xxl, Apache-2.0), cuantización FP8 Comfy-Org. Conservar licencia y avisos al redistribuir."
+    },
+    {
+      "id": "wan22-vae",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "url": "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/5df3a4a3ed0628002308022198249dbbbd045d09/split_files/vae/wan2.2_vae.safetensors",
+      "version": "5df3a4a3ed0628002308022198249dbbbd045d09",
+      "path": "ComfyUI/models/vae/wan2.2_vae.safetensors",
+      "bytes": 1409400960,
+      "sha256": "e40321bd36b9709991dae2530eb4ac303dd168276980d3e9bc4b6e2b75fed156",
+      "license_url": "https://raw.githubusercontent.com/Wan-Video/Wan2.2/1ea34ff48f87168174e12956e200b1d908b1c5ff/LICENSE.txt",
+      "license_id": "Apache-2.0",
+      "restrictions": "Conservar licencia y avisos al redistribuir. Sin concesión de marcas."
+    }
+  ]
+}

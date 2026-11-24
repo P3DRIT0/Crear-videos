@@ -9,3 +9,13 @@ HOME: RTX 4070 Super 12 GB. Detectar RAM real, espacio, driver, CUDA compatible 
 Benchmark: un storyboard, un clip de 3–5s, cinco planos con continuidad, reel vertical completo. Medir pico VRAM/RAM, tiempo, tamaño, errores/OOM, puntuación humana; repetir con seeds y manifest. Reducir resolución/duración o cambiar modelo ante OOM, máximo 2 intentos. No inferir velocidad antes de medir.
 
 Transferencia: clonar repo o copiar carpeta limpia, .env.example, lockfiles, migraciones y workflows; no copiar venv, node_modules, datos sensibles, caches ni modelos. Recrear entornos en casa. Exportar DB/assets solo si necesario mediante script documentado. Perfil WORK por defecto; HOME requiere opt-in y descarga explícita. Publicación desactivada en ambos hasta configuración.
+
+## Inventario HOME comprobado · 24-11-2026
+
+Windows 11 Pro 10.0.26200; AMD Ryzen 7 5700X3D, 8 núcleos / 16 hilos;
+17054560256 bytes de RAM física (15,9 GiB); NVIDIA RTX 4070 SUPER, 12282 MiB,
+driver 591.86. Sin cambios de controlador. Perfil HOME16, worker nativo.
+Datos y entornos en E: (Fanxiang S500Pro 1 TB), aproximadamente 481 GiB libres
+tras instalar; C: conserva unos 14 GiB libres. ComfyUI usa acceso a disco para
+gestionar pesos y ejecuta una sola etapa de inferencia por vez desde las herramientas
+del proyecto. Ver mediciones, licencias y límites en [HOME](HOME.md) y [STATUS](STATUS.md).

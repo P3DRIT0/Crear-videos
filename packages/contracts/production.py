@@ -30,6 +30,7 @@ class ProductionInput(Model):
     idea: Objective
     preset: Preset = "motion"
     character_id: UUID | None = None
+    provider: Literal["mock-v1", "home-local-v1"] = "mock-v1"
 
 
 class Shot(Model):
@@ -56,8 +57,8 @@ class CreativeDecision(Model):
 
 
 class Plan(Model):
-    simulated: Literal[True] = True
-    provider: Literal["mock-v1"] = "mock-v1"
+    simulated: bool = True
+    provider: Literal["mock-v1", "home-local-v1"] = "mock-v1"
     idea: Objective
     script: Script
     shots: list[Shot] = Field(min_length=5, max_length=5)
@@ -106,7 +107,8 @@ class ProductionSummary(Model):
     title: str
     state: str
     revision: int
-    simulated: Literal[True]
+    simulated: bool
+    provider: Literal["mock-v1", "home-local-v1"] = "mock-v1"
 
 
 class SequenceEdit(Model):
@@ -138,6 +140,7 @@ class ProductionDetail(ProductionSummary):
     error: str | None
     created_at: datetime
     exports: list[dict]
+    home: dict | None = None
 
 
 class ModelRecordInput(Model):

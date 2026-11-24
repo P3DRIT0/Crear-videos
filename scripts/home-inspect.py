@@ -31,7 +31,7 @@ def inspect():
                                "--format=csv,noheader,nounits"],capture_output=True,text=True,timeout=15)
         if result.returncode==0:
             gpu=result.stdout.strip().splitlines()
-    return {"os":platform.platform(),"ram_gib":memory(),"disk_free_gib":round(shutil.disk_usage(".").free/1024**3,1),
+    return {"os":platform.platform(),"ram_gib":memory(),"disk_path":str(Path.cwd()),"disk_free_gib":round(shutil.disk_usage(".").free/1024**3,1),
             "gpu_name_driver_total_free_mib":gpu,"executables":{k:bool(shutil.which(k)) for k in ("ffmpeg","ffprobe","ollama","nvidia-smi")}}
 
 if __name__=="__main__":

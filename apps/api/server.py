@@ -10,6 +10,7 @@ from .worker import loop
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import UUID
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import TypeAdapter, ValidationError
 from packages.contracts.routes import PREFIX, ROUTES, openapi
@@ -103,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
             raise Problem(404, "missing", "Ruta no encontrada.")
         except Problem as exc:
             self.respond(exc.status, canonical({"code": exc.code, "message": str(exc)}))
-        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
             self.close_connection = True
         except Exception as exc:
             print(json.dumps({"event": "service_error", "exception": type(exc).__name__}),
@@ -113,7 +114,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def events(self, brand, item):
         try:
-            cursor=max(0,int(self.headers.get("Last-Event-ID","0")))
+            query=parse_qs(urlsplit(self.path).query,keep_blank_values=True,max_num_fields=1)
+            if set(query)-{"after"} or len(query.get("after",["0"]))!=1:
+                raise ValueError
+            value=self.headers.get("Last-Event-ID",query.get("after",["0"])[0])
+            if not re.fullmatch(r"\d{1,19}",value):
+                raise ValueError
+            cursor=int(value)
+            if cursor>2**63-1:
+                raise ValueError
         except ValueError:
             raise Problem(422,"cursor","Cursor SSE inválido.") from None
         with self.server.studio.db.transaction() as q:
@@ -202,6 +211,8 @@ def main():
     args = parser.parse_args()
     os.umask(0o077)
     config = Config.load()
+    from packages.network_policy import install
+    install()
     if args.check:
         print(json.dumps(Studio(config).health()))
         return

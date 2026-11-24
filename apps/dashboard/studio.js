@@ -17,7 +17,7 @@ const names = {
 };
 let brand = params.get("brand"), project = params.get("production"), campaign = params.get("campaign");
 let campaigns = [], characters = [], projects = [], registry = {}, publications = [], metrics = {},
-    policy = {}, doc = null, source = null, generation = 0, submitForm;
+    policy = {}, doc = null, source = null, generation = 0, loaded = false, submitForm;
 const base = () => "/brands/" + brand;
 const prod = () => base() + "/productions/" + project;
 const tab = () => ["edit", "review", "calendar", "library"].includes(location.hash.slice(1)) ?
@@ -98,7 +98,7 @@ function connect() {
   if (!doc || !["queued", "rendering"].includes(doc.state))
     return;
   const id = project, revision = doc.revision;
-  source = new EventSource("/api/v1" + prod() + "/events");
+  source = new EventSource("/api/v1" + prod() + "/events?after=" + revision);
   source.onmessage = event => {
     if (project === id && Number(event.lastEventId) > revision) {
       disconnect();
@@ -108,6 +108,11 @@ function connect() {
 }
 async function load() {
   const seq = ++generation;
+  let valid=false;
+  loaded=false;
+  disconnect();
+  setBusy(true);
+  try {
   const all = await api("/brands");
   if (seq !== generation)
     return;
@@ -142,6 +147,23 @@ async function load() {
   history.replaceState(null, "", "/studio?" + q.toString() + location.hash);
   draw();
   connect();
+  valid=true;
+  loaded=true;
+  } catch(error) {
+    if(seq===generation) {
+      doc=null;
+      $("#workspace").innerHTML=panel("Carga pendiente","<p>"+esc(error.message)+"</p>"+btn("reload","Reintentar carga"));
+    }
+    throw error;
+  } finally {
+    if(seq===generation) setBusy(false,valid);
+  }
+}
+function setBusy(busy,valid=true) {
+  $("#workspace").inert=busy;
+  $("#production").setAttribute("aria-busy",String(busy));
+  $("#new-production").disabled=busy||!valid;
+  $("#project").disabled=busy||!valid;
 }
 function story() {
   const busy = ["queued", "rendering"].includes(doc.state);
@@ -163,7 +185,7 @@ function story() {
                 " s</span><h3>" + esc(s.caption) + "</h3>" +
                 "<p>" + esc(s.camera) + "</p><p class=\"meta\">" + esc(s.prompt) + "</p>" +
                 (selected ? video(selected, "preview") : "") + "<div class=\"actions\">" +
-                (busy ? "" : btn("edit-shot", "Editar plano", tag)) +
+                (busy || (doc.home && !doc.home.reference_ready) ? "" : btn("edit-shot", "Editar plano", tag)) +
                 (!busy && selected && doc.attempts[i] < 2 ? btn("regenerate", "Regenerar", tag) : "") +
                 "</div>" +
                 (comparisons ? "<details><summary>Candidatos (" + doc.candidates[i].length +
@@ -173,11 +195,12 @@ function story() {
           })
           .join("");
   return panel(
-             "Guion MOCK",
+             doc.provider === "home-local-v1" ? (doc.plan.simulated ? "Guion preparatorio MOCK · pendiente de Ollama" : "Guion HOME · Ollama") : "Guion MOCK",
              "<p>" + esc(doc.plan.idea) + "</p><p><strong>" + esc(doc.plan.script.hook) + "</strong></p><p>" +
                  esc(doc.plan.script.cta) + "</p>" + (busy ? "" : btn("rewrite", "Versionar idea")) +
                  "<p class=\"meta\">" + esc(doc.preset.name) + " · " + esc(doc.character.name) + " v" +
-                 doc.character.version + "</p>") +
+                 doc.character.version + "</p>" + (doc.home?.reference_ready ?
+                 "<img class=\"character-ref\" alt=\"Referencia real de la producción\" src=\"" + url(doc.character.reference.sha256) + "\">" : "")) +
       "<div class=\"shots\">" + cards + "</div><details><summary>Historial del storyboard (" +
       doc.plan_history.length + ")</summary>" +
       doc.plan_history
@@ -212,14 +235,14 @@ function edit() {
         panel("Montaje", "<p>El montaje estará disponible cuando terminen los cinco planos y el QC.</p>");
   const a = doc.output.assets, q = doc.output.qc;
   return timeline() +
-      panel("Reel MOCK",
+      panel(doc.provider === "home-local-v1" ? "Reel HOME · IA local" : "Reel MOCK",
             video(a.video.sha256) + "<p>" + q.width + " × " + q.height + " · 24 fps · " + q.duration +
                 " s · H.264 / AAC</p>" +
                 "<p class=\"meta\">QC · pico " + q.peak_db + " dB · intervalos negros " + q.black_intervals +
                 " · subtítulos incluidos</p><div class=\"actions\">" +
                 Object.entries(downloads)
                     .map(
-                        ([k, [n, ext]]) => "<a class=\"button\" download=\"MOCK-" + k + "." + ext +
+                        ([k, [n, ext]]) => "<a class=\"button\" download=\"" + (doc.provider === "home-local-v1" ? "HOME-" : "MOCK-") + k + "." + ext +
                             "\" href=\"" + url(a[k].sha256) + "\">" + n + "</a>")
                     .join("") +
                 "</div>" +
@@ -277,6 +300,7 @@ function calendar() {
 function library() {
   return panel(
              "Personajes",
+             "<p>Las vistas de biblioteca son referencias procedurales MOCK. HOME genera una referencia SDXL a partir de la ficha del personaje y la conserva para sus cinco planos.</p>" +
              btn("character", "Crear versión de personaje") +
                  characters
                      .map(
@@ -305,7 +329,9 @@ function library() {
             registry.providers
                     .map(p => "<p>" + esc(p.name) + " · " + esc(p.active ? p.license : p.reason) + "</p>")
                     .join("") +
-                "<p>Inferencia desactivada en WORK.</p>" + btn("model", "Registrar candidato") +
+                "<p>HOME usa los pesos verificados del equipo; los candidatos registrados aquí no se activan automáticamente.</p>" +
+                (doc?.home?.models || []).map(m => "<p>"+esc(m.id)+" · "+esc(m.license_id)+
+                  (m.license_asset ? " · <a href=\""+url(m.license_asset.sha256)+"\" download=\"LICENSE.txt\">Descargar licencia</a>" : "")+"</p>").join("") + btn("model", "Registrar candidato") +
                 registry.models
                     .map(
                         m => "<p>" + esc(m.name) + " · " + esc(m.version) + " · " + esc(m.license_id) +
@@ -313,6 +339,8 @@ function library() {
                     .join(""));
 }
 function draw() {
+  const home = doc?.provider === "home-local-v1";
+  $(".environment").textContent = home ? "HOME / IA LOCAL" : "WORK / MOCK";
   for (const link of document.querySelectorAll("nav a")) {
     if (link.hash === "#" + tab())
       link.setAttribute("aria-current", "page");
@@ -322,10 +350,10 @@ function draw() {
   const section = tab();
   let body = doc ? "<div class=\"panel\"><div class=\"panel-head\"><h2>" + esc(doc.title) +
           "</h2><span class=\"tag\">" + esc(names[doc.state]) + "</span></div>" +
-          "<p class=\"meta\">MOCK · " + doc.selected.filter(Boolean).length +
+          "<p class=\"meta\">" + (home ? "HOME · " + esc(doc.home?.stage || "pending") + " · " : "MOCK · ") + doc.selected.filter(Boolean).length +
           "/5 planos guardados</p><div class=\"actions\">" +
           (["queued", "rendering"].includes(doc.state) ? btn("cancel", "Cancelar render") :
-               !doc.output.assets                      ? btn("render", "Renderizar reel") :
+               !doc.output.assets                      ? btn("render", ["failed","cancelled"].includes(doc.state) ? "Reintentar / reanudar" : "Renderizar reel") :
                                                          "") +
           "</div>" + (doc.error ? "<p role=\"alert\">" + esc(doc.error) + "</p>" : "") + "</div>" :
                    "";
@@ -337,6 +365,10 @@ function draw() {
     body += panel("Sin producción", "<p>Elige una campaña al crear la primera producción.</p>");
   else
     body += section === "story" ? story() : section === "edit" ? edit() : review();
+  if (doc)
+    body += (home ? "<details><summary>Etapas HOME y recuperación</summary>" + doc.home.operations.map(o =>
+      "<p class=\"meta\">" + esc(o.kind) + (o.index != null ? " · plano " + (o.index + 1) : "") + " · " + esc(o.state) +
+      " · intento " + (o.attempt || 1) + " · ID " + esc(o.id) + (o.elapsed_seconds ? " · " + o.elapsed_seconds + " s" : "") + "</p>").join("") + "</details>" : "");
   if (doc)
     body += "<details><summary>Actividad (" + doc.activity.length + ")</summary>" +
         (doc.plan.trace || [])
@@ -362,7 +394,9 @@ $("#new-production").onclick = () => {
       });
   }
   dialog(
-      "Nueva producción MOCK",
+      "Nueva producción",
+      field("Proveedor", "<select name=\"provider\"><option value=\"mock-v1\">MOCK · CPU de prueba</option>" +
+        (registry.providers.some(p => p.name === "home-local-v1" && p.active) ? "<option selected value=\"home-local-v1\">HOME · Ollama + SDXL + Wan</option>" : "") + "</select>") +
       field("Campaña", "<select name=\"campaign_id\">" + options(campaigns, "id", "name") + "</select>") +
           field("Idea", area("idea")) +
           field(
@@ -403,7 +437,7 @@ $("#project").onchange = () => {
   load().catch(e => say(e.message));
 };
 window.onhashchange = () => {
-  if (registry.presets)
+  if (loaded)
     draw();
 };
 $("#workspace").onclick = async e => {
@@ -412,6 +446,7 @@ $("#workspace").onclick = async e => {
     return;
   const action = b.dataset.do, i = Number(b.dataset.index), shot = doc?.plan.shots[i];
   const post = (op, data) => api(prod() + "/" + op, "POST", data);
+  if(action==="reload") return load().catch(e=>say(e.message));
   if (action === "policy")
     return dialog(
         "Política de la marca",
@@ -484,7 +519,7 @@ $("#workspace").onclick = async e => {
             field("Descripción visual", area("prompt", shot.prompt)) +
             field(
                 "Duración (s)",
-                "<input type=\"number\" required min=\"3\" max=\"5\" name=\"duration\" value=\"" +
+                "<input type=\"number\" required min=\"3\" max=\"" + (doc.home ? "3" : "5") + "\" name=\"duration\" value=\"" +
                     shot.duration + "\">"),
         v => post("edit", {...v, duration: Number(v.duration), order: i + 1, revision: doc.revision}));
   if (action === "review")

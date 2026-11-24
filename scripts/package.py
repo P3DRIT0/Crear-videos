@@ -7,12 +7,13 @@ from zipfile import ZIP_DEFLATED,ZipFile
 
 ROOT=Path(__file__).resolve().parents[1]
 INCLUDE={"apps":{".py",".html",".css",".js"},"packages":{".py"},"integrations":{".py"},
-         "infra":{".sql"},"config":{".yaml"},"docs":{".md"},"prompts":{".md"},
-         "scripts":{".py",""},"tests":{".py",".mjs"}}
+         "infra":{".sql"},"config":{".yaml",".json"},"docs":{".md"},"prompts":{".md"},
+         "scripts":{".py",".mjs",""},"tests":{".py",".mjs"}}
 
 
 def package(dest):
-    files=[ROOT/name for name in ("AGENTS.md","README.md",".gitignore",".env.example","requirements-work.lock")]
+    files=[ROOT/name for name in ("AGENTS.md","README.md",".gitignore",".env.example","requirements-work.lock",
+                                 "requirements-home.lock","requirements-comfy-home.lock","estudio.cmd")]
     for folder,ext in INCLUDE.items():
         files.extend(p for p in (ROOT/folder).rglob("*") if p.is_file() and p.suffix in ext
                      and not any(part.startswith(".") or part=="__pycache__" for part in p.relative_to(ROOT).parts))

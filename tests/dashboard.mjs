@@ -1,7 +1,7 @@
 // Prueba de navegador opcional. Usa la instalación local de Playwright y su caché.
 import assert from "node:assert/strict";
 import {studioFlow} from "./studio-flow.mjs";
-import {spawn} from "node:child_process";
+import {spawn, spawnSync} from "node:child_process";
 import {createHash} from "node:crypto";
 import {mkdtemp, readdir, readFile, rm} from "node:fs/promises";
 import {homedir, tmpdir} from "node:os";
@@ -30,7 +30,7 @@ async function playwright() {
 
 const {chromium} = await playwright();
 const data = await mkdtemp(path.join(tmpdir(),"studio-ui-"));
-const server = spawn("python3", ["-u","-c", [
+const server = spawn(process.env.STUDIO_PYTHON || "python3", ["-u","-c", [
   "from apps.api.server import build_server, Config",
   "from apps.api.worker import loop",
   "from threading import Thread, Event",
@@ -38,7 +38,7 @@ const server = spawn("python3", ["-u","-c", [
   " Thread(target=loop,args=(server.studio,Event()),daemon=True).start()",
   " print(server.server_port, flush=True)",
   " server.serve_forever()"
-].join("\n")], {cwd:root,env:{...process.env,STUDIO_DATA:data,STUDIO_DB:"sqlite",STUDIO_PROFILE:"work"},
+].join("\n")], {cwd:root,env:{...process.env,STUDIO_DATA:data,STUDIO_DB:"sqlite",STUDIO_PROFILE:"work",STUDIO_ENABLE_HOME:"0"},
   stdio:["ignore","pipe","inherit"]});
 const stopped = once(server,"exit");
 let browser;
@@ -110,7 +110,11 @@ try {
   console.log("OK · Chromium " + browser.version() + " · CRUD, montaje, revisión de fixture, calendario dry-run, móvil y cero peticiones externas del dashboard.");
 } finally {
   try { await browser?.close(); } finally {
-    server.kill();
+    // El lanzador de venv Windows deja un intérprete hijo: cerrar todo el árbol propio.
+    if(process.platform==="win32" && server.exitCode===null) {
+      const cleanup=spawnSync("taskkill.exe",["/PID",String(server.pid),"/T","/F"],{windowsHide:true,stdio:"ignore"});
+      if(cleanup.error || cleanup.status!==0) throw Error("No se pudo cerrar el servidor aislado del test.");
+    } else server.kill();
     await stopped;
     await rm(data,{recursive:true,force:true});
   }

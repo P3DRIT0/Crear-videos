@@ -1,5 +1,11 @@
 # Operación y traslado
 
+Para este equipo Windows, usar [la guía HOME](HOME.md) y `estudio.cmd`. Los
+comandos POSIX e históricos WORK de esta página siguen documentando el entorno
+original. El launcher Windows configura sus datos en E: y el selector HOME del
+dashboard ejecuta los proveedores reales con checkpoints. Las herramientas CLI
+anteriores se conservan como diagnóstico independiente.
+
 ## WORK
 
 En la raíz, ejecutar `./scripts/setup` y `./scripts/dev`. La API, la interfaz y el worker CPU usan el mismo directorio privado. El dashboard se abre en http://127.0.0.1:8765 y el estudio en http://127.0.0.1:8765/studio. La configuración por defecto es SQLite. El ejecutor de fichas de 01 continúa siendo síncrono. La cola de vídeo usa checkpoints en SQL y un candado de proceso en el directorio compartido. El indicador de un job se refiere a CPU; el presupuesto GPU de WORK es cero.

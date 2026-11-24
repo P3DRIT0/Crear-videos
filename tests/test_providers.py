@@ -28,10 +28,10 @@ class LocalContracts(unittest.TestCase):
                     "/prompt":{"prompt_id":job},
                     "/history/"+job:{job:{"status":{"status_str":"success"},"outputs":{"1":{"images":[
                         {"filename":"fixture.png","subfolder":"","type":"output"}]}}}},
-                    "/queue":{}, "/view?filename=fixture.png&type=output":b"MOCK fixture",
+                    "/queue":{}, "/interrupt":{}, "/api/jobs/"+job+"/cancel":{"cancelled":True}, "/truncated":b"MOCK", "/view?filename=fixture.png&type=output":b"MOCK fixture",
                 }[self.path]
                 data=result if isinstance(result,bytes) else json.dumps(result).encode()
-                self.send_response(200);self.send_header("Content-Length",str(len(data)));self.end_headers()
+                self.send_response(200);self.send_header("Content-Length",str(len(data)+(10 if self.path=="/truncated" else 0)));self.end_headers()
                 self.wfile.write(data)
             do_POST=do_GET=reply
         with ThreadingHTTPServer(("127.0.0.1",0),Fixture) as server:
@@ -49,6 +49,12 @@ class LocalContracts(unittest.TestCase):
                 self.assertEqual(client.collect(client.status(job),".png"),b"MOCK fixture")
                 client.cancel_queued(job)
                 self.assertEqual(calls[-1],("/queue",{"delete":[job]}))
+                client.cancel(job)
+                self.assertEqual(calls[-1],("/interrupt",{"prompt_id":job}))
+                self.assertTrue(client.cancel_atomic(job)["cancelled"])
+                self.assertEqual(calls[-1],("/api/jobs/"+job+"/cancel",{}))
+                with self.assertRaisesRegex(RuntimeError,"incompleta"):
+                    client.request("/truncated")
             finally:
                 server.shutdown();thread.join()
 

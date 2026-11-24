@@ -75,9 +75,14 @@ def transfer(source,dest,restore=False):
                 raise ValueError("Hash incorrecto: "+digest)
         if not restore:
             (out/"backup.json").write_text(json.dumps({"version":1,"database":sha(target),"blobs":refs},indent=2))
-        # Publicar solo la copia completa. mkdir falla si otro proceso ya reservó el destino.
-        dest.mkdir(mode=0o700)
-        os.replace(out,dest)
+        # Hacer visible solo la copia completa y rechazar un destino ya existente.
+        if os.name == "nt":
+            # En Windows rename ya rechaza un destino existente de forma atómica.
+            # replace no puede sustituir ni siquiera un directorio vacío.
+            os.rename(out, dest)
+        else:
+            dest.mkdir(mode=0o700)
+            os.replace(out,dest)
         return len(refs)
 
 

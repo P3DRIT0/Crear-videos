@@ -81,6 +81,8 @@ async function refresh() {
       if (request !== sequence) return;
       brands = found;
       $("#brand").replaceChildren(...brands.map(b => new Option(b.name,b.id)));
+      const capabilities = await api("/system/capabilities");
+      $(".environment").textContent = capabilities.home_enabled ? "HOME / Local" : "WORK / Local";
     }
     $(".brand-icon").textContent = $("#brand").selectedOptions[0].textContent.slice(0,1);
     if (page === "sistema") {
@@ -89,7 +91,7 @@ async function refresh() {
       const info = [["Perfil",cap.profile.toUpperCase()],["Base de datos",health.database],["Migración",health.schema_version],
         ["Almacenamiento","Lectura de esquema y escritura de prueba correctas"],["Ejecutor","Manual · síncrono"],
         ["Jobs GPU",cap.gpu_jobs],["Inferencia remota","Desactivada"],["Publicación","Desactivada"]];
-      view.innerHTML = hero("Sistema","Recursos del proceso local.") + panel("Estado de WORK",'<dl>' +
+      view.innerHTML = hero("Sistema","Recursos del proceso local.") + panel("Estado de " + cap.profile.toUpperCase(),'<dl>' +
         info.map(([k,v])=>'<dt>'+k+'</dt><dd>'+escapeText(v)+'</dd>').join("")+'</dl>',
         '<a class="link" href="/api/v1/openapi.json">OpenAPI</a>');
     } else {

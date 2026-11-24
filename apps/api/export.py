@@ -20,6 +20,8 @@ def export(studio,brand,production,dest):
         raise ValueError("Indique un destino nuevo.")
     names={"video":"reel-MOCK.mp4","cover":"portada-MOCK.png","copy":"copy.txt",
            "subtitles":"subtitulos.srt","manifest":"manifest.json","timeline":"timeline.json"}
+    if doc.get("provider")=="home-local-v1":
+        names.update(video="reel-HOME.mp4",cover="portada-HOME.png")
     dest.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
         bundle=Path(tmp)/"export"
@@ -30,9 +32,18 @@ def export(studio,brand,production,dest):
         (bundle/"planos").mkdir(mode=0o700)
         for i,digest in enumerate(doc["selected"],1):
             (bundle/"planos"/f"{i:02}.mp4").write_bytes(studio.blobs.read(digest))
-        (bundle/"storyboard.json").write_text(json.dumps(doc["plan"],ensure_ascii=False,indent=2))
-        dest.mkdir(mode=0o700)
-        os.replace(bundle,dest)
+        (bundle/"storyboard.json").write_text(json.dumps(doc["plan"],ensure_ascii=False,indent=2),encoding="utf-8")
+        if doc.get("home"):
+            (bundle/"referencia.png").write_bytes(studio.blobs.read(doc["character"]["reference"]["sha256"]))
+            (bundle/"licencias").mkdir()
+            for index,model in enumerate(doc["home"]["models"],1):
+                if "license_asset" in model:
+                    (bundle/"licencias"/f"{index:02}-LICENSE.txt").write_bytes(studio.blobs.read(model["license_asset"]["sha256"]))
+        if os.name=="nt":
+            os.rename(bundle,dest)
+        else:
+            dest.mkdir(mode=0o700)
+            os.replace(bundle,dest)
     return doc["output"]["assets"]["video"]["sha256"]
 
 

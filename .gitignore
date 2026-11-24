@@ -7,3 +7,6 @@ node_modules/
 .pytest_cache/
 *.mp4
 *.safetensors
+*.safetensors.partial
+*.gguf
+*.ckpt

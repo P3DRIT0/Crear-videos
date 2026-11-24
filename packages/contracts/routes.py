@@ -100,5 +100,5 @@ def openapi():
         if route.body:
             operation["requestBody"] = {"required": True, "content": content(route.body)}
         paths.setdefault(PREFIX + route.path, {})[route.method.lower()] = operation
-    return {"openapi": "3.1.0", "info": {"title": "AI Creative Studio", "version": "0.2.0"},
+    return {"openapi": "3.1.0", "info": {"title": "AI Creative Studio", "version": "0.3.0"},
             "paths": paths, "components": {"schemas": schemas}}

@@ -6,9 +6,7 @@ import json
 from pathlib import Path
 import platform
 import re
-import shutil
 import subprocess
-import sys
 from threading import Event,Thread
 import time
 
@@ -68,6 +66,11 @@ def run(spec,out):
     verified_asset(spec)
     out.parent.mkdir(parents=True,exist_ok=True)
     with gpu_slot(Path.home()/".creative-studio-gpu.lock"):
+        queue=ComfyUI(spec["profile"]).request("/queue")
+        if queue.get("queue_running") or queue.get("queue_pending"):
+            raise RuntimeError("ComfyUI debe estar libre antes del benchmark exclusivo.")
+        if Ollama(spec["profile"]).request("/api/ps").get("models"):
+            raise RuntimeError("Descargue primero de memoria los modelos activos de Ollama.")
         out.mkdir(mode=0o700)
         report={"gpu":card,"profile":spec["profile"],"stage":spec["stage"],"weights_sha256":spec["weights_sha256"],
                 "version":spec["version"],"peak_sampled_vram_mib":card["used_mib"],"peak_sampled_ram_mib":used_ram(),
@@ -84,10 +87,12 @@ def run(spec,out):
                     return
         thread=Thread(target=sample,daemon=True);thread.start()
         start=time.monotonic()
+        client=None
+        job=None
         try:
             if spec["stage"]=="script":
                 result=Ollama(spec["profile"]).script(spec["model"],spec["model_digest"],spec["idea"])
-                target=out/"script.json";target.write_text(result.model_dump_json(indent=2))
+                target=out/"script.json";target.write_text(result.model_dump_json(indent=2),encoding="utf-8")
             elif spec["stage"] in ("image","clip"):
                 client=ComfyUI(spec["profile"])
                 workflow=Path(spec["workflow_path"]).read_bytes()
@@ -112,8 +117,10 @@ def run(spec,out):
                     if record: break
                     time.sleep(1)
                 else:
-                    client.cancel_queued(job)
+                    client.cancel(job)
                     raise TimeoutError("Timeout; verificar historial y liberar GPU antes de reintentar.")
+                report["cached_nodes"]=[message[1].get("nodes",[]) for message in record.get("status",{}).get("messages",[])
+                                        if message[0]=="execution_cached"]
                 extension=".png" if spec["stage"]=="image" else ".mp4"
                 target=out/(spec["stage"]+extension)
                 target.write_bytes(client.collect(record,extension))
@@ -126,13 +133,20 @@ def run(spec,out):
             else:
                 raise ValueError("Etapa soportada: script, image o clip.")
             report.update(status="completed",artifact_sha256=sha(target),bytes=target.stat().st_size)
-        except Exception as exc:
-            report.update(status="failed",error=str(exc))
+        except (Exception,KeyboardInterrupt) as exc:
+            report.update(status="cancelled" if isinstance(exc,KeyboardInterrupt) else "failed",error=str(exc))
             raise
         finally:
+            if client is not None:
+                try:
+                    if report["status"]!="completed" and job is not None:
+                        client.cancel(job)
+                    client.request("/free",{"unload_models":True,"free_memory":True},allow_empty=True)
+                except (OSError,ValueError,RuntimeError) as exc:
+                    report["cleanup_error"]=str(exc)
             stop.set();thread.join(10)
             report["elapsed_seconds"]=round(time.monotonic()-start,3)
-            (out/"benchmark.json").write_text(json.dumps(report,ensure_ascii=False,indent=2))
+            (out/"benchmark.json").write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
 
 
 if __name__=="__main__":
@@ -140,4 +154,4 @@ if __name__=="__main__":
     parser.add_argument("manifest",type=Path)
     parser.add_argument("output",type=Path)
     args=parser.parse_args()
-    run(json.loads(args.manifest.read_text()),args.output)
+    run(json.loads(args.manifest.read_text(encoding="utf-8")),args.output)

@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import tempfile
 from threading import Event
-import time
 
 from .config import Config
 from .media import compose, render_shot, cancellation_check
@@ -28,6 +27,14 @@ def step(studio):
     with worker_slot(studio.db.config.data) as acquired:
         if not acquired:
             return False
+        from . import home_runtime
+        with studio.db.transaction() as q:
+            halted=q("SELECT document FROM productions WHERE state IN ('cancelled','failed')").fetchall()
+        for row in halted:
+            stopped=json.loads(row["document"])
+            operations=stopped.get("home",{}).get("operations",[])
+            if studio.db.config.home_root is not None and operations and operations[-1].get("cancel_requested"):
+                return home_runtime.step(studio,stopped)
         with studio.db.transaction(write=True) as q:
             row=q("SELECT document FROM productions WHERE state IN ('queued','rendering') "
                   "ORDER BY CASE WHEN state='rendering' THEN 0 ELSE 1 END,id LIMIT 1").fetchone()
@@ -41,7 +48,12 @@ def step(studio):
                     return True
             if d["state"]=="queued":
                 d["state"]="rendering"
-                save(q,d,"Worker CPU iniciado")
+                save(q,d,"Worker HOME reanudado desde SQL" if d.get("provider")==home_runtime.PROVIDER else "Worker CPU iniciado")
+        if d.get("provider")==home_runtime.PROVIDER:
+            if studio.db.config.home_root is None:
+                home_runtime.fail(studio,d,"HOME desactivado; arranque con el lanzador doméstico.")
+                return True
+            return home_runtime.step(studio,d)
         revision=d["revision"]
         def cancelled():
             with studio.db.transaction() as q:

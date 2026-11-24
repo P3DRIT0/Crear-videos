@@ -23,7 +23,9 @@ GLYPHS = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", (
     "34216","72222","55557","55552","55775","55255","55222","71247",
     "75557","26227","71247","71217","55711","74617","74657","71111","75757","75717")))
 MEDIA_LICENSE = "original-procedural-v1"
+REAL_LICENSE = "verified-local-generation-v1"
 RENDERER = "pixel-work/2"
+RENDERER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def rgb(value):
@@ -148,9 +150,29 @@ def encode(args, work):
                     "-filter_complex_threads","1",*args],work)
 
 
-def asset(store, data, mime):
-    return {"sha256":store.save(data),"mime":mime,"bytes":len(data),
-            "simulated":True,"license":MEDIA_LICENSE}
+def asset(store, data, mime, *, simulated=True, provenance=None):
+    result = {"sha256":store.save(data),"mime":mime,"bytes":len(data),
+              "simulated":simulated,"license":MEDIA_LICENSE if simulated else REAL_LICENSE}
+    if not simulated:
+        if not provenance:
+            raise ValueError("Falta procedencia de la generación real.")
+        result.update(license_verified=True, provenance=provenance)
+    return result
+
+
+def input_hash(doc, index):
+    shot = doc["plan"]["shots"][index]
+    material = shot
+    if doc.get("provider") == "home-local-v1":
+        material = [shot, doc["home"]["epoch"], doc["character"]["reference"]["sha256"]]
+    return hashlib.sha256(canonical(material)).hexdigest()
+
+
+def licensed(entry, simulated):
+    if simulated:
+        return entry.get("simulated") is True and entry.get("license") == MEDIA_LICENSE
+    return (entry.get("simulated") is False and entry.get("license") == REAL_LICENSE
+            and entry.get("license_verified") is True and bool(entry.get("provenance")))
 
 
 def render_shot(doc, index, store, work):
@@ -216,6 +238,8 @@ def inspect_video(path, duration):
 
 
 def compose(doc,store,work):
+    simulated=doc.get("provider", "mock-v1")=="mock-v1"
+    label="MOCK · " if simulated else ""
     timeline=[]
     selected_candidates=[]
     captions=[]
@@ -224,14 +248,14 @@ def compose(doc,store,work):
         shot=doc["plan"]["shots"][order-1]
         digest=doc["selected"][order-1]
         clip=next(c for c in doc["candidates"][order-1] if c["sha256"]==digest)
-        if clip["license"]!=MEDIA_LICENSE or not clip["simulated"]:
+        if not licensed(clip, simulated):
             raise ValueError("Licencia del plano sin verificar.")
         selected_candidates.append(clip)
         (work/f"{i}.mp4").write_bytes(store.read(digest))
         end=position+shot["duration"]
         def stamp(s):
             return f"00:{s//60:02d}:{s%60:02d},000"
-        captions.append(f"{i+1}\n{stamp(position)} --> {stamp(end)}\nMOCK · {shot['caption']}\n")
+        captions.append(f"{i+1}\n{stamp(position)} --> {stamp(end)}\n{label}{shot['caption']}\n")
         timeline.append(dict(order=i+1,shot_order=order,start=position,duration=shot["duration"],sha256=digest))
         position=end
     srt="\n".join(captions).encode()
@@ -240,24 +264,30 @@ def compose(doc,store,work):
     score=doc["plan"].get("decisions",{}).get("disenador_sonoro",{}).get("result",
         {"sample_rate":24000,"frequencies_hz":[220,261.63,329.63,392,261.63]})
     sound(timeline,work/"score.wav",score)
+    scale="scale=1080:1920:flags=neighbor" if simulated else "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
     encode(["-f","concat","-safe","1","-i","clips.txt","-i","score.wav","-i","captions.srt",
-            "-map","0:v","-map","1:a","-map","2:s","-vf","scale=1080:1920:flags=neighbor",
-            "-c:v","libx264","-threads","2","-preset","ultrafast","-crf","20","-c:a","aac",
+            "-map","0:v","-map","1:a","-map","2:s","-vf",scale,
+            "-c:v","libx264","-threads","2","-preset","ultrafast" if simulated else "fast","-crf","20","-c:a","aac",
             "-b:a","96k","-c:s","mov_text","-metadata:s:s:0","language=spa","-movflags","+faststart","reel.mp4"],work)
     encode(["-ss","1","-i","reel.mp4","-frames:v","1","-vf","scale=360:640","-threads","1","cover.png"],work)
     qc=inspect_video(work/"reel.mp4",position)
     if not qc["passed"]:
         raise ValueError("QC técnico fallido: "+json.dumps(qc))
-    outputs={key:asset(store,data,mime) for key,data,mime in (
+    provenance={"source":"local-ffmpeg-compose", "selected": [c["sha256"] for c in selected_candidates],
+                "audio":"original procedural tones", "models":doc.get("home",{}).get("models",[])}
+    outputs={key:asset(store,data,mime,simulated=simulated,provenance=provenance) for key,data,mime in (
         ("video",(work/"reel.mp4").read_bytes(),"video/mp4"),("cover",(work/"cover.png").read_bytes(),"image/png"),
         ("subtitles",srt,"application/x-subrip"),("timeline",canonical(timeline),"application/json"),
-        ("copy",("MOCK · "+doc["title"]+"\n"+doc["plan"]["script"]["cta"]).encode(),"text/plain"))}
+        ("copy",(label+doc["title"]+"\n"+doc["plan"]["script"]["cta"]).encode(),"text/plain"))}
     version=command(["ffmpeg","-version"],work).stdout.decode().splitlines()[0]
-    manifest={"version":1,"simulated":True,"license":MEDIA_LICENSE,"renderer":RENDERER,"ffmpeg":version,
-              "source":"geometría, alfabeto bitmap y síntesis de tonos del proyecto","native":[135,240],
+    manifest={"version":1,"simulated":simulated,"license":MEDIA_LICENSE if simulated else REAL_LICENSE,"renderer":RENDERER if simulated else "home-local/1","ffmpeg":version,
+              "source":"geometría, alfabeto bitmap y síntesis de tonos del proyecto" if simulated else "Ollama + SDXL + Wan; audio procedural original",
+              "native":[135,240] if simulated else [480,832], "upscaled":True,
+              "models":doc.get("home",{}).get("models",[]), "human_review":"pending",
               "production_id":doc["id"],"preset":doc["preset"],"character":doc["character"],
               "plan":doc["plan"],"timeline":timeline,"selected_candidates":selected_candidates,
-              "renderer_source_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+              "renderer_source_sha256":RENDERER_SOURCE_SHA256,
+              "home_execution":doc.get("home"),
               "outputs":outputs.copy(),"qc":qc}
-    outputs["manifest"]=asset(store,canonical(manifest),"application/json")
+    outputs["manifest"]=asset(store,canonical(manifest),"application/json",simulated=simulated,provenance=provenance)
     return {"assets":outputs,"qc":qc,"copy":doc["plan"]["script"]["cta"]}

@@ -122,7 +122,7 @@ class ProductionHTTP(unittest.TestCase):
         with self.server.studio.db.transaction(write=True) as q:
             for pid in [self.project["id"],second["id"]]:
                 d=json.loads(q("SELECT document FROM productions WHERE id=?",(pid,)).fetchone()["document"])
-                d.update(state="ready",output={"assets":{"video":{"sha256":digest,"license":"original-procedural-v1"}},"qc":{"passed":True}})
+                d.update(state="ready",output={"assets":{"video":{"sha256":digest,"license":"original-procedural-v1","simulated":True}},"qc":{"passed":True}})
                 q("UPDATE productions SET state='ready',document=? WHERE id=?",(json.dumps(d),pid))
         for path in paths:
             self.api("POST",path+"/review",{"artifact_hash":digest,"reviewer":"TEST","verdict":"approved",
@@ -175,10 +175,26 @@ class ProductionHTTP(unittest.TestCase):
             self.assertIn("Cancelación",res.readline().decode())
         finally: client.close()
 
+    def test_event_cursor_query_validation_and_header_precedence(self):
+        for query in ("?after=-1","?after=9223372036854775808","?after=x","?after=1&after=2","?other=1"):
+            self.api("GET",self.path+"/events"+query,status=422)
+        revision=self.detail()["revision"]
+        for query,headers in [(f"?after={revision-1}",{}),("?after=0",{"Last-Event-ID":str(revision-1)})]:
+            c=http.client.HTTPConnection("127.0.0.1",self.server.server_port,timeout=3)
+            try:
+                c.request("GET","/api/v1"+self.path+"/events"+query,headers=headers)
+                response=c.getresponse()
+                self.assertEqual(response.status,200)
+                self.assertEqual(response.readline(),b"retry: 1000\n")
+                response.readline()
+                self.assertEqual(response.readline(),f"id: {revision}\n".encode())
+            finally:
+                c.close()
+
     def test_real_reel_restart_regeneration_review_dry_run_and_restore(self):
         self.api("POST",self.path+"/render")
         worker=subprocess.Popen([sys.executable,"-m","apps.api.worker"],cwd=ROOT,
-            env={**os.environ,"STUDIO_DATA":str(self.config.data),"STUDIO_DB":"sqlite","STUDIO_PROFILE":"work"},
+            env={**os.environ,"STUDIO_DATA":str(self.config.data),"STUDIO_DB":"sqlite","STUDIO_PROFILE":"work","STUDIO_ENABLE_HOME":"0"},
             stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
         try:
             deadline=time.monotonic()+15

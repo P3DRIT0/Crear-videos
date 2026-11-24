@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from packages.contracts.production import BrandPolicy
 from .agents import PRESETS, ROLES, preset_data, storyboard
-from .media import MEDIA_LICENSE, asset, sprite
+from .media import MEDIA_LICENSE, asset, sprite, input_hash, licensed
 from .service import Problem, one
 from .storage import canonical
 
@@ -26,7 +26,7 @@ def conflict(message):
 
 
 def summary(doc):
-    return {key:doc[key] for key in ("id","campaign_id","brand_id","title","state","revision","simulated")}
+    return {key:doc[key] for key in ("id","campaign_id","brand_id","title","state","revision","simulated")} | {"provider":doc.get("provider","mock-v1")}
 
 
 def save(query, doc, message):
@@ -113,6 +113,14 @@ class ProductionService:
         return char
 
     def create(self,q,owner,body):
+        provider=body.get("provider","mock-v1")
+        if provider=="home-local-v1":
+            if self.db.config.home_root is None:
+                raise conflict("HOME est\u00e1 desactivado; use el lanzador dom\u00e9stico con opt-in expl\u00edcito.")
+            from .home_runtime import descriptor
+            available=descriptor(self.db.config)
+            if not available["active"]:
+                raise conflict(available["reason"])
         campaign=one(q("SELECT * FROM campaigns WHERE id=? AND brand_id=?",
                        (body["campaign_id"],owner["id"])),"Campaña")
         if body.get("character_id"):
@@ -127,8 +135,12 @@ class ProductionService:
              "title":campaign["name"],"simulated":True,"revision":0,"state":"draft","created_at":now(),
              "plan":plan,"plan_history":[],"character":char,"preset":preset,"candidates":[[] for _ in range(5)],
              "selected":[None]*5,"attempts":[0]*5,"output":{},"reviews":[],"exports":[],"error":None}
+        doc["provider"]=provider
+        if provider=="home-local-v1":
+            from .home_runtime import new_state
+            doc["home"]=new_state()
         q("INSERT INTO productions VALUES (?,?,?,?,?,?)",(doc["id"],owner["id"],campaign["id"],"draft",0,"{}"))
-        save(q,doc,"Guionista → storyboard → productor · MOCK · contratos v1")
+        save(q,doc,"HOME · producción preparada; pendiente de inferencia" if provider=="home-local-v1" else "Guionista → storyboard → productor · MOCK · contratos v1")
         return summary(doc)
 
     def read(self,q,owner,collection,item,action,resource):
@@ -144,11 +156,11 @@ class ProductionService:
         if collection=="policy":
             return policy(q,brand)
         if collection=="registry":
+            from .home_runtime import descriptor
             models=[json.loads(r["document"]) for r in q("SELECT document FROM model_records WHERE brand_id=? ORDER BY id",(brand,))]
             return {"presets":[preset_data(k) for k in PRESETS],"roles":ROLES,"models":models,
                     "providers":[{"name":"mock-v1","active":True,"license":MEDIA_LICENSE},
-                                 {"name":"Ollama","active":False,"reason":"HOME · pesos pendientes de verificar"},
-                                 {"name":"ComfyUI","active":False,"reason":"HOME · workflow y pesos pendientes"}]}
+                                 descriptor(self.db.config)]}
         if collection=="publications":
             return [dict(r) for r in q("SELECT * FROM publications WHERE brand_id=? ORDER BY scheduled_at",(brand,))]
         if collection=="metrics":
@@ -160,8 +172,10 @@ class ProductionService:
             return [summary(json.loads(r["document"])) for r in q(
                 "SELECT document FROM productions WHERE brand_id=? ORDER BY id",(brand,))]
         doc=load_doc(q,brand,item)
+        doc.setdefault("active_review",None)
         if action=="assets":
             entries=[doc["character"]["reference"]]+[c for group in doc["candidates"] for c in group]
+            entries.extend(m["license_asset"] for m in doc.get("home",{}).get("models",[]) if "license_asset" in m)
             for export in [doc["output"],*doc["exports"]]:
                 entries.extend(export.get("assets",{}).values())
             found=next((a for a in entries if a["sha256"]==resource),None)
@@ -169,7 +183,7 @@ class ProductionService:
                 raise Problem(404,"missing","Asset no asociado a esta producción.")
             return self.store.read(resource),found["mime"]
         for group,shot in zip(doc["candidates"],doc["plan"]["shots"],strict=True):
-            digest=hashlib.sha256(canonical(shot)).hexdigest()
+            digest=input_hash(doc,shot["order"]-1)
             for candidate in group:
                 candidate["selectable"]=candidate["input_hash"]==digest
         doc["activity"]=[dict(r) for r in q(
@@ -177,18 +191,27 @@ class ProductionService:
         return doc
 
     def change(self,q,d,action,b):
+        is_home=d.get("provider")=="home-local-v1"
+        if is_home and action in ("render","regenerate") and self.db.config.home_root is None:
+            raise conflict("WORK bloquea inferencia HOME; arranque con el perfil doméstico.")
         if action=="schedule":
             return self.schedule(q,d,b)
         if action=="cancel":
             if d["state"] not in ACTIVE:
                 raise conflict("La producción no está en cola.")
             d["state"]="cancelled"
+            if is_home and d["home"]["operations"]:
+                operation=d["home"]["operations"][-1]
+                if operation["kind"]!="script" and operation["state"] in ("submitting","running","uncertain"):
+                    operation["cancel_requested"]=True
             message="Cancelación solicitada"
         elif d["state"] in ACTIVE:
             raise conflict("Cancele la ejecución antes de modificar el storyboard.")
         elif action=="render":
             if d["output"]:
                 return summary(d)
+            if is_home:
+                d["home"].update(run_token=str(uuid4()),retry_requested=d["state"] in ("failed","cancelled"))
             d.update(state="queued",error=None)
             message="Montaje en cola"
         elif action=="rewrite":
@@ -201,11 +224,17 @@ class ProductionService:
                 d["preset"]=preset_data(b["preset"])
             d["plan_history"].append(d["plan"])
             d["plan"]=storyboard(b["idea"],d["title"],d["brand_name"],d["preset"],d["character"])
+            if is_home:
+                from .home_runtime import new_state
+                previous=d["home"]
+                history=previous.pop("history",[])
+                d["home"]=new_state() | {"history":[*history,previous]}
+                d["simulated"]=True
             d["attempts"]=[0]*5
             d["selected"]=[None]*5
             invalidate(q,d)
             d["state"]="draft"
-            message="Guion y storyboard versionados · MOCK"
+            message="HOME · nueva versión pendiente de inferencia" if is_home else "Guion y storyboard versionados · MOCK"
         elif action=="sequence":
             if b["revision"]!=d["revision"]:
                 raise conflict("La timeline ha cambiado.")
@@ -216,6 +245,8 @@ class ProductionService:
             d["state"]="draft"
             message="Orden del montaje actualizado"
         elif action=="edit":
+            if is_home and (not d["home"]["reference_ready"] or b["duration"]!=3):
+                raise conflict("HOME requiere guion y referencia generados; el perfil medido usa planos de 3 segundos.")
             if b["revision"]!=d["revision"]:
                 raise conflict("El storyboard ha cambiado. Recargue la producción.")
             i=b["order"]-1
@@ -236,11 +267,13 @@ class ProductionService:
             invalidate(q,d)
             d["selected"][i]=None
             d["attempts"][i]+=1
+            if is_home:
+                d["home"].update(run_token=str(uuid4()),retry_requested=False)
             d.update(state="queued",error=None)
             message=f"Regeneración selectiva · plano {i+1}"
         elif action=="select":
             i=b["order"]-1
-            digest=hashlib.sha256(canonical(d["plan"]["shots"][i])).hexdigest()
+            digest=input_hash(d,i)
             if not any(c["sha256"]==b["sha256"] and c["input_hash"]==digest for c in d["candidates"][i]):
                 raise conflict("El candidato no corresponde a esta versión del plano.")
             if d["selected"][i]==b["sha256"]:
@@ -268,7 +301,7 @@ class ProductionService:
         out=d["output"]
         if not out or out["assets"]["video"]["sha256"]!=digest or not out["qc"]["passed"]:
             raise conflict("Se requiere el hash actual con QC superado.")
-        if any(a["license"]!=MEDIA_LICENSE for a in out["assets"].values()):
+        if any(not licensed(a,d.get("provider","mock-v1")=="mock-v1") for a in out["assets"].values()):
             raise conflict("Licencia sin verificar.")
 
     def approved(self,q,d,digest):
