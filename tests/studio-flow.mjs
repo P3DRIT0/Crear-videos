@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+
+export async function studioFlow(page, origin) {
+  const getButton = name => page.getByRole("button", {name, exact: true});
+  const fill = (name, value) => page.getByRole("dialog").getByLabel(name, {exact: true}).fill(value);
+  const save = async () => {
+    await getButton("Guardar").click();
+    await page.getByRole("dialog").waitFor({state: "hidden"});
+  };
+  await getButton("Nueva campaña").click();
+  await fill("Nombre", "Estudio de prueba");
+  await fill("Objetivo", "Historia de una pequeña luz.");
+  await save();
+  await page.getByRole("link", {name: "Abrir estudio", exact: true}).click();
+  await page.getByRole("heading", {name: "Sin producción"}).waitFor();
+  await page.getByRole("link", {name: "Biblioteca", exact: true}).click();
+  await getButton("Crear versión de personaje").click();
+  await fill("Nombre", "Bruma");
+  await fill("Descripción", "Luz azul con visor.");
+  await save();
+  await page.getByRole("heading", {name: "Bruma · v1"}).waitFor();
+  await getButton("Nueva producción").click();
+  await page.getByRole("dialog").getByLabel("Personaje").selectOption({label: "Bruma · v1"});
+  await save();
+  await page.getByRole("heading", {name: "Guion MOCK"}).waitFor();
+  const shot = page.locator(".shot").first();
+  await shot.getByRole("button", {name: "Editar plano"}).click();
+  await fill("Subtítulo", "Una luz azul");
+  await save();
+  await shot.getByRole("heading", {name: "Una luz azul"}).waitFor();
+  await getButton("Renderizar reel").click();
+  await page.getByText("Listo para revisar", {exact: true}).waitFor({timeout: 120000});
+  await page.getByRole("navigation").getByRole("link", {name: "Montaje", exact: true}).click();
+  const downloadEvent = page.waitForEvent("download");
+  await page.getByRole("link", {name: "Manifest", exact: true}).click();
+  const download = await downloadEvent;
+  const {readFile} = await import("node:fs/promises");
+  const manifest = JSON.parse(await readFile(await download.path(), "utf8"));
+  assert.equal(manifest.qc.passed, true);
+  assert.equal(manifest.timeline.length, 5);
+  assert.equal(manifest.simulated, true);
+  await page.getByRole("link", {name: "Revisión", exact: true}).click();
+  await getButton("Registrar revisión").click();
+  await fill("Revisor", "FIXTURE UI");
+  await fill("Observaciones", "Prueba automática de formulario.");
+  await page.getByLabel("Decisión").selectOption("approved");
+  for (const field of ["Continuidad", "Movimiento", "Narrativa"]) await fill(field, "3");
+  await save();
+  await page.getByRole("link", {name: "Calendario", exact: true}).click();
+  await getButton("Programar simulación").click();
+  await fill("Fecha y hora local del navegador", "2026-01-01T12:00");
+  await save();
+  await getButton("Ejecutar dry-run").click();
+  await page.getByRole("heading", {name: "Simulación completada"}).waitFor();
+  assert.equal(new URL(page.url()).origin, origin);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+}

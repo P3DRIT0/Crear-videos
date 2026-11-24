@@ -1,0 +1,9 @@
+.studio/
+.env
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+.pytest_cache/
+*.mp4
+*.safetensors

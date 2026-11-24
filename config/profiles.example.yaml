@@ -1,0 +1,28 @@
+profile: work
+network:
+  inference_remote: false
+  research: false
+  publishing: false
+  downloads: manual
+cost_policy:
+  paid_providers: forbidden
+  unknown_license: block
+profiles:
+  work:
+    providers: mock
+    gpu_jobs: 0
+  home16:
+    providers: local
+    gpu_jobs: 1
+    llm: small_quantized
+    video_resolution: low
+  home32:
+    providers: local
+    gpu_jobs: 1
+    llm: quantized
+    video_resolution: 480p_initial
+publishing:
+  mode: dry_run
+  require_approval: true
+quality:
+  max_regenerations_per_shot: 2

@@ -1,0 +1,11 @@
+# Desarrollo y despliegue local
+
+WORK: CPU, sin modelos, mock determinista, clips sintéticos FFmpeg/testsrc o assets propios marcados MOCK. Docker Compose local para PostgreSQL y Temporal (o modo reducido documentado); UI/API/worker CPU. No descargar CUDA ni checkpoints. Pruebas end-to-end con render simulado y publicación dry-run. Usar Git local o repositorio privado autorizado; no transferir información del trabajo. No guardar modelos, vídeos o secretos en Git.
+
+HOME: RTX 4070 Super 12 GB. Detectar RAM real, espacio, driver, CUDA compatible y OS (Windows/Linux; no imponer reinstalación). En Windows evaluar worker nativo o WSL2; en Linux worker nativo o NVIDIA Container Toolkit. No instalar controladores automáticamente. Comprobar nvidia-smi, RAM, disco. Elegir entorno según resultados. ComfyUI y Ollama separados y solo un proceso de inferencia GPU a la vez; descargar modelos de memoria y comprobar antes de cambiar etapa. Ollama en CPU si viable o alternar con generación. No forzar offload que provoque swapping.
+
+16 GB RAM: servicios mínimos, LLM 3–4B Q4 CPU o secuencial, SDXL batch 1, clips cortos de baja resolución, evaluar FramePack/LTX/Wan 5B según memoria real; sin 14B. 32 GB: mismo flujo, opción 7–9B, evaluar Wan 5B a 480p primero, 720p solo tras benchmark. 64 GB opcional, no requisito de compra. 14B cuantizado experimental solo si margen de RAM/VRAM y tiempo aceptables. No afirmar que un modelo cabe por su nombre. Disco libre sugerido 200 GB para inicio, ampliable; 2 TB útil si se acumulan modelos.
+
+Benchmark: un storyboard, un clip de 3–5s, cinco planos con continuidad, reel vertical completo. Medir pico VRAM/RAM, tiempo, tamaño, errores/OOM, puntuación humana; repetir con seeds y manifest. Reducir resolución/duración o cambiar modelo ante OOM, máximo 2 intentos. No inferir velocidad antes de medir.
+
+Transferencia: clonar repo o copiar carpeta limpia, .env.example, lockfiles, migraciones y workflows; no copiar venv, node_modules, datos sensibles, caches ni modelos. Recrear entornos en casa. Exportar DB/assets solo si necesario mediante script documentado. Perfil WORK por defecto; HOME requiere opt-in y descarga explícita. Publicación desactivada en ambos hasta configuración.

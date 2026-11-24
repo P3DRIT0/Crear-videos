@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Producción · Creative Studio</title><link rel="stylesheet" href="/style.css"><script src="/studio.js" defer></script></head>
+<body><a class="skip" href="#production">Ir a producción</a><header><a class="wordmark studio-home" href="/"><span class="symbol" aria-hidden="true"><i></i><i></i><i></i></span>Creative Studio</a><div class="environment"><span class="led"></span>WORK / MOCK</div></header>
+<div class="layout"><aside><label class="micro" for="brand">Espacio de marca</label><select id="brand"></select>
+<div class="side-actions"><button type="button" id="new-brand">Crear marca</button></div>
+<nav aria-label="Estudio"><a href="#story">Storyboard</a><a href="#edit">Montaje</a><a href="#review">Revisión</a><a href="#calendar">Calendario</a><a href="#library">Biblioteca</a><a href="/">Volver al resumen</a></nav></aside>
+<main id="production"><div class="hero"><div><h1>Producción</h1><p>Estudio de previsualización local</p></div><button class="primary" id="new-production">Nueva producción</button></div>
+<label for="project" class="micro">Producción activa</label><select id="project"></select>
+<p id="feedback" role="status"></p><div id="workspace" aria-live="off"></div></main></div>
+<dialog id="modal" aria-labelledby="heading"><form id="form"><h2 id="heading"></h2><div id="inputs"></div><p role="alert" id="failure"></p><div class="actions"><button type="button" id="dismiss">Cancelar</button><button class="primary" id="submit">Guardar</button></div></form></dialog>
+</body></html>
